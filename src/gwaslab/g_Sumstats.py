@@ -20,7 +20,7 @@ from gwaslab.qc_fix_sumstats import sortcoordinate
 from gwaslab.qc_fix_sumstats import sortcolumn
 from gwaslab.qc_fix_sumstats import _set_build
 from gwaslab.qc_fix_sumstats import _process_build
-from gwaslab.qc_fix_sumstats import parallelorderalleles
+from gwaslab.qc_fix_sumstats import parallelorderalleles_status, vectorizedorderalleles_status, parallelbuildsnpid
 from gwaslab.hm_harmonize_sumstats import parallelecheckaf
 from gwaslab.hm_harmonize_sumstats import paralleleinferaf
 from gwaslab.hm_harmonize_sumstats import checkref
@@ -289,14 +289,33 @@ class Sumstats():
         ###############################################
 
     
-    def order_alleles(self, ea='EA', nea='NEA', n_cores=1, flipallelestats_args={}, **kwargs):
-        self.data = parallelorderalleles(self.data, log=self.log, ea=ea, nea=nea, n_cores=n_cores, **kwargs)
+    def order_alleles(self, ea='EA', nea='NEA', status='STATUS', chrom='CHR', pos='POS', snpid='SNPID', format_snpid=True, n_cores=1, mode='v', flipallelestats_args={}, verbose=True):
+        # Step 1: set status to appropriate value if ea and nea should be flipped based on our custom ordering
+        if mode == 'v':
+            self.data = vectorizedorderalleles_status(self.data, ea=ea, nea=nea, status=status, log=self.log, verbose=verbose)
+        elif mode == 'p':
+            self.data = parallelorderalleles_status(self.data, ea=ea, nea=nea, status=status, n_cores=n_cores, log=self.log, verbose=verbose)
+        else:
+            raise ValueError("mode should be either 'v' (vectorized) or 'p' (parallel)")
 
-        categories = set(self.data['EA']) | set(self.data['NEA'])
-        self.data[ea] = pd.Categorical(self.data[ea],categories = categories) 
-        self.data[nea] = pd.Categorical(self.data[nea],categories = categories)
+        # Step 2: fix stats to match the new allele order (ea and nea are actually swapped where needed and stats are fixed accordingly)
+        #categories = set(self.data[ea]) | set(self.data[nea]) # slower
+        categories = set()
+        if self.data[ea].dtype.name == 'category':
+            categories = categories | set(self.data[ea].cat.categories.tolist())
+        if self.data[nea].dtype.name == 'category':
+            categories = categories | set(self.data[nea].cat.categories.tolist())
+        self.data[ea] = pd.Categorical(self.data[ea], categories = categories) 
+        self.data[nea] = pd.Categorical(self.data[nea], categories = categories)
 
-        self.data = flipallelestats(self.data, log=self.log, **flipallelestats_args)
+        base_flipallelestats_args = dict(reverse_compl=False, flip_ref=True, flip_ref_und=False, flip_rev_strand=False) # skip unnecessary checks to speed up
+        base_flipallelestats_args.update(flipallelestats_args)
+        self.data = flipallelestats(self.data, log=self.log, **base_flipallelestats_args)
+
+        # Step 3: build snpid based on the new allele order -> chr:pos:allele1:allele2
+        if format_snpid:
+            self.data = parallelbuildsnpid(self.data, chrom=chrom, pos=pos, ea=ea, nea=nea, snpid=snpid, n_cores=n_cores, log=self.log, verbose=verbose)
+        
     
     def harmonize(self,
               basic_check=True,

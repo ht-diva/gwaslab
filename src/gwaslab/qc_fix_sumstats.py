@@ -13,6 +13,7 @@ from gwaslab.g_Log import Log
 from gwaslab.bd_common_data import get_chr_to_number
 from gwaslab.bd_common_data import get_number_to_chr
 from gwaslab.bd_common_data import get_chr_list
+from gwaslab.bd_common_data import _maketrans
 from gwaslab.qc_check_datatype import check_datatype
 from gwaslab.qc_check_datatype import check_dataframe_shape
 from gwaslab.g_version import _get_version
@@ -1263,7 +1264,7 @@ def flip_by_sign(sumstats, matched_index, log, verbose, cols=None):
         sumstats.loc[matched_index,"DIRECTION"] =   sumstats.loc[matched_index,"DIRECTION"].apply(flip_direction)
     return sumstats
 
-def flipallelestats(sumstats,status="STATUS",verbose=True,log=Log()):
+def flipallelestats(sumstats,status="STATUS",reverse_compl=True,flip_ref=True,flip_ref_und=True,flip_rev_strand=True,verbose=True,log=Log()):
     ##start function with col checking##########################################################
     _start_line = "adjust statistics based on STATUS code"
     _end_line = "adjusting statistics based on STATUS code"
@@ -1284,76 +1285,80 @@ def flipallelestats(sumstats,status="STATUS",verbose=True,log=Log()):
 
     if_stats_flipped = False
     ###################get reverse complementary####################
-    pattern = r"\w\w\w\w\w[45]\w"  
-    #matched_index = status_match(sumstats[status],6,[4,5]) #
-    matched_index = sumstats[status].str[5].str.match(r"4|5")
-    if sum(matched_index)>0:
-        log.write("Start to convert alleles to reverse complement for SNPs with status xxxxx[45]x...{}".format(_get_version()), verbose=verbose) 
-        log.write(" -Flipping "+ str(sum(matched_index)) +" variants...", verbose=verbose) 
-        if ("NEA" in sumstats.columns) and ("EA" in sumstats.columns) :
-            log.write(" -Converting to reverse complement : EA and NEA...", verbose=verbose) 
-            reverse_complement_nea = sumstats.loc[matched_index,'NEA'].apply(lambda x :get_reverse_complementary_allele(x)) 
-            reverse_complement_ea = sumstats.loc[matched_index,'EA'].apply(lambda x :get_reverse_complementary_allele(x)) 
-            categories = set(sumstats['EA'])|set(sumstats['NEA']) |set(reverse_complement_ea) |set(reverse_complement_nea)
-            sumstats['EA']=pd.Categorical(sumstats['EA'],categories = categories) 
-            sumstats['NEA']=pd.Categorical(sumstats['NEA'],categories = categories ) 
-            sumstats.loc[matched_index,['NEA']] = reverse_complement_nea
-            sumstats.loc[matched_index,['EA']] = reverse_complement_ea
-            sumstats.loc[matched_index,status] = vchange_status(sumstats.loc[matched_index,status], 6, "4","2")
-            log.write(" -Changed the status for flipped variants : xxxxx4x -> xxxxx2x", verbose=verbose)
-        if_stats_flipped = True
+    if reverse_compl:
+        pattern = r"\w\w\w\w\w[45]\w"  
+        #matched_index = status_match(sumstats[status],6,[4,5]) #
+        matched_index = sumstats[status].str[5].str.match(r"4|5")
+        if sum(matched_index)>0:
+            log.write("Start to convert alleles to reverse complement for SNPs with status xxxxx[45]x...{}".format(_get_version()), verbose=verbose) 
+            log.write(" -Flipping "+ str(sum(matched_index)) +" variants...", verbose=verbose) 
+            if ("NEA" in sumstats.columns) and ("EA" in sumstats.columns) :
+                log.write(" -Converting to reverse complement : EA and NEA...", verbose=verbose) 
+                reverse_complement_nea = sumstats.loc[matched_index,'NEA'].apply(lambda x :get_reverse_complementary_allele(x)) 
+                reverse_complement_ea = sumstats.loc[matched_index,'EA'].apply(lambda x :get_reverse_complementary_allele(x)) 
+                categories = set(sumstats['EA'])|set(sumstats['NEA']) |set(reverse_complement_ea) |set(reverse_complement_nea)
+                sumstats['EA']=pd.Categorical(sumstats['EA'],categories = categories) 
+                sumstats['NEA']=pd.Categorical(sumstats['NEA'],categories = categories ) 
+                sumstats.loc[matched_index,['NEA']] = reverse_complement_nea
+                sumstats.loc[matched_index,['EA']] = reverse_complement_ea
+                sumstats.loc[matched_index,status] = vchange_status(sumstats.loc[matched_index,status], 6, "4","2")
+                log.write(" -Changed the status for flipped variants : xxxxx4x -> xxxxx2x", verbose=verbose)
+            if_stats_flipped = True
     ###################flip ref####################
-    pattern = r"\w\w\w\w\w[35]\w"  
-    #matched_index = status_match(sumstats[status],6,[3,5]) #sumstats[status].str.match(pattern)
-    matched_index = sumstats[status].str[5].str.match(r"3|5")
-    if sum(matched_index)>0:
-        log.write("Start to flip allele-specific stats for SNPs with status xxxxx[35]x: ALT->EA , REF->NEA ...{}".format(_get_version()), verbose=verbose) 
-        log.write(" -Flipping "+ str(sum(matched_index)) +" variants...", verbose=verbose) 
-        
-        flip_by_swap(sumstats, matched_index, log, verbose)
-        flip_by_sign(sumstats, matched_index, log, verbose, cols=None)
-        flip_by_subtract(sumstats, matched_index, log, verbose, cols=None, factor=1)
-        flip_by_inverse(sumstats, matched_index, log, verbose, cols=None, factor=1)
-        
-        #change status    
-        log.write(" -Changed the status for flipped variants : xxxxx[35]x -> xxxxx[12]x", verbose=verbose) 
-        sumstats.loc[matched_index,status] = vchange_status(sumstats.loc[matched_index,status], 6, "35","12")
-        if_stats_flipped = True
+    if flip_ref:
+        pattern = r"\w\w\w\w\w[35]\w"  
+        #matched_index = status_match(sumstats[status],6,[3,5]) #sumstats[status].str.match(pattern)
+        matched_index = sumstats[status].str[5].str.match(r"3|5")
+        if sum(matched_index)>0:
+            log.write("Start to flip allele-specific stats for SNPs with status xxxxx[35]x: ALT->EA , REF->NEA ...{}".format(_get_version()), verbose=verbose) 
+            log.write(" -Flipping "+ str(sum(matched_index)) +" variants...", verbose=verbose) 
+            
+            flip_by_swap(sumstats, matched_index, log, verbose)
+            flip_by_sign(sumstats, matched_index, log, verbose, cols=None)
+            flip_by_subtract(sumstats, matched_index, log, verbose, cols=None, factor=1)
+            flip_by_inverse(sumstats, matched_index, log, verbose, cols=None, factor=1)
+            
+            #change status    
+            log.write(" -Changed the status for flipped variants : xxxxx[35]x -> xxxxx[12]x", verbose=verbose) 
+            sumstats.loc[matched_index,status] = vchange_status(sumstats.loc[matched_index,status], 6, "35","12")
+            if_stats_flipped = True
         
     ###################flip ref for undistingushable indels####################
-    pattern = r"\w\w\w\w[123][67]6"  
-    #matched_index = status_match(sumstats[status],6,[1,2,3])|status_match(sumstats[status],6,[6,7])|status_match(sumstats[status],7,6) #sumstats[status].str.match(pattern)
-    matched_index = sumstats[status].str[4:].str.match(r"[123][67]6")
-    if sum(matched_index)>0:
-        log.write("Start to flip allele-specific stats for standardized indels with status xxxx[123][67][6]: ALT->EA , REF->NEA...{}".format(_get_version()), verbose=verbose) 
-        log.write(" -Flipping "+ str(sum(matched_index)) +" variants...", verbose=verbose) 
-        
-        flip_by_swap(sumstats, matched_index, log, verbose)
-        flip_by_sign(sumstats, matched_index, log, verbose, cols=None)
-        flip_by_subtract(sumstats, matched_index, log, verbose, cols=None, factor=1)
-        flip_by_inverse(sumstats, matched_index, log, verbose, cols=None, factor=1)
-        
-        #change status    
-        log.write(" -Changed the status for flipped variants xxxx[123][67]6 -> xxxx[123][67]4", verbose=verbose) 
-        sumstats.loc[matched_index,status] = vchange_status(sumstats.loc[matched_index,status], 7, "6","4")
-        if_stats_flipped = True
-         # flip ref
+    if flip_ref_und:
+        pattern = r"\w\w\w\w[123][67]6"  
+        #matched_index = status_match(sumstats[status],6,[1,2,3])|status_match(sumstats[status],6,[6,7])|status_match(sumstats[status],7,6) #sumstats[status].str.match(pattern)
+        matched_index = sumstats[status].str[4:].str.match(r"[123][67]6")
+        if sum(matched_index)>0:
+            log.write("Start to flip allele-specific stats for standardized indels with status xxxx[123][67][6]: ALT->EA , REF->NEA...{}".format(_get_version()), verbose=verbose) 
+            log.write(" -Flipping "+ str(sum(matched_index)) +" variants...", verbose=verbose) 
+            
+            flip_by_swap(sumstats, matched_index, log, verbose)
+            flip_by_sign(sumstats, matched_index, log, verbose, cols=None)
+            flip_by_subtract(sumstats, matched_index, log, verbose, cols=None, factor=1)
+            flip_by_inverse(sumstats, matched_index, log, verbose, cols=None, factor=1)
+            
+            #change status    
+            log.write(" -Changed the status for flipped variants xxxx[123][67]6 -> xxxx[123][67]4", verbose=verbose) 
+            sumstats.loc[matched_index,status] = vchange_status(sumstats.loc[matched_index,status], 7, "6","4")
+            if_stats_flipped = True
+            # flip ref
     ###################flip statistics for reverse strand panlindromic variants####################
-    pattern = r"\w\w\w\w\w[012]5"  
-    #matched_index = status_match(sumstats[status],6,[0,1,2]) | status_match(sumstats[status],7,[5])#sumstats[status].str.match(pattern)
-    matched_index = sumstats[status].str[5:].str.match(r"05|15|25")
-    if sum(matched_index)>0:
-        log.write("Start to flip allele-specific stats for palindromic SNPs with status xxxxx[12]5: (-)strand <=> (+)strand...{}".format(_get_version()), verbose=verbose) 
-        log.write(" -Flipping "+ str(sum(matched_index)) +" variants...", verbose=verbose) 
+    if flip_rev_strand:
+        pattern = r"\w\w\w\w\w[012]5"  
+        #matched_index = status_match(sumstats[status],6,[0,1,2]) | status_match(sumstats[status],7,[5])#sumstats[status].str.match(pattern)
+        matched_index = sumstats[status].str[5:].str.match(r"05|15|25")
+        if sum(matched_index)>0:
+            log.write("Start to flip allele-specific stats for palindromic SNPs with status xxxxx[12]5: (-)strand <=> (+)strand...{}".format(_get_version()), verbose=verbose) 
+            log.write(" -Flipping "+ str(sum(matched_index)) +" variants...", verbose=verbose) 
 
-        flip_by_sign(sumstats, matched_index, log, verbose, cols=None)
-        flip_by_subtract(sumstats, matched_index, log, verbose, cols=None, factor=1)
-        flip_by_inverse(sumstats, matched_index, log, verbose, cols=None, factor=1)
-        
-        #change status    
-        log.write(" -Changed the status for flipped variants:  xxxxx[012]5: ->  xxxxx[012]2", verbose=verbose) 
-        sumstats.loc[matched_index,status] = vchange_status(sumstats.loc[matched_index,status], 7, "5","2")
-        if_stats_flipped = True
+            flip_by_sign(sumstats, matched_index, log, verbose, cols=None)
+            flip_by_subtract(sumstats, matched_index, log, verbose, cols=None, factor=1)
+            flip_by_inverse(sumstats, matched_index, log, verbose, cols=None, factor=1)
+            
+            #change status    
+            log.write(" -Changed the status for flipped variants:  xxxxx[012]5: ->  xxxxx[012]2", verbose=verbose) 
+            sumstats.loc[matched_index,status] = vchange_status(sumstats.loc[matched_index,status], 7, "5","2")
+            if_stats_flipped = True
 
     if if_stats_flipped != True:
         log.write(" -No statistics have been changed.")
@@ -1538,11 +1543,28 @@ def custom_alleles_sort(strings):
     
     return sorted(strings, key=cmp_to_key(compare))
 
-def parallelorderalleles(sumstats, snpid='SNPID', chrom="CHR", pos="POS", nea="NEA", ea="EA", status="STATUS", n_cores=1, verbose=True, log=Log()):
+def orderalleles_status(sumstats, nea="NEA", ea="EA", status="STATUS", verbose=True, log=Log()):
+    def status_ordering(ea, nea, status):
+        to_sort = [ea, nea]
+        allele1, allele2 = custom_alleles_sort(to_sort)
+        if allele1 != ea:
+            status = status[:5] + '3' + status[6:]
+        return status
+        
+    out = sumstats[[ea, nea, status]].apply(lambda x: status_ordering(x.iloc[0], x.iloc[1], x.iloc[2]), axis=1)
+   
+    if sumstats[status].dtype.name == 'category':
+        sumstats[status] = pd.Categorical(out.values, categories=sumstats[status].cat.categories)
+    else:
+        sumstats[status] = out.values
+
+    return sumstats
+
+def parallelorderalleles_status(sumstats, nea="NEA", ea="EA", status="STATUS", n_cores=1, verbose=True, log=Log()):
     ##start function with col checking##########################################################
-    _start_line = "order alleles"
-    _end_line = "ordering alleles"
-    _start_cols = [snpid,chrom,pos,nea,ea,status] if snpid in sumstats.columns else [nea,ea,status]
+    _start_line = "change status based on custom allele order"
+    _end_line = "changing status based on custom allele order"
+    _start_cols = [nea,ea,status]
     _start_function = ".order_alleles()"
     _must_args = {}
 
@@ -1561,37 +1583,122 @@ def parallelorderalleles(sumstats, snpid='SNPID', chrom="CHR", pos="POS", nea="N
     if n_cores > 1:
         df_split = _df_split(sumstats, n_cores)
         pool = Pool(n_cores)
-        map_func = partial(orderalleles, snpid=snpid,chrom=chrom,pos=pos,ea=ea,nea=nea,status=status,verbose=verbose,log=log)
+        map_func = partial(orderalleles_status, ea=ea,nea=nea,status=status,verbose=verbose,log=log)
         sumstats = pd.concat(pool.map(map_func, df_split))
         pool.close()
         pool.join()
     else:
-        sumstats = orderalleles(sumstats, snpid=snpid,chrom=chrom,pos=pos,ea=ea,nea=nea,status=status,verbose=verbose,log=log)
+        sumstats = orderalleles_status(sumstats, ea=ea,nea=nea,status=status,verbose=verbose,log=log)
 
     finished(log,verbose,_end_line)
     return sumstats
 
-def orderalleles(sumstats, snpid='SNPID', chrom="CHR", pos="POS", nea="NEA", ea="EA", status="STATUS", verbose=True, log=Log()):
-    def status_ordering(chrom, pos, ea, nea, status, build_snpid=True):
-        to_sort = [ea, nea]
-        allele1, allele2 = custom_alleles_sort(to_sort)
-        if allele1 != ea:
-            status = status[:5] + '3' + status[6:]
-        
-        if build_snpid:
-            return f"{chrom}:{pos}:{allele1}:{allele2}", status
-        else:
-            return status
-        
-    build_snpid = snpid in sumstats.columns
-    out = sumstats[[chrom, pos, ea, nea, status]].apply(lambda x: status_ordering(x.iloc[0], x.iloc[1], x.iloc[2], x.iloc[3], x.iloc[4], build_snpid=build_snpid), axis=1, result_type='expand')
-    
-    if build_snpid:
-        sumstats[[snpid, status]] = out
-    else:
-        sumstats[[status]] = out
 
-    return sumstats   
+ORDER_MAPPING = {el: chr(i+1) for i, el in enumerate(sorted(['A','T','C','G'], reverse=False))}
+assert all(value != chr(0) for value in ORDER_MAPPING.values()), "Mapping in the dictionary should not be equal to chr(0). This is a reserved value"
+TRANSLATE_TABLE_ORDER = _maketrans(ORDER_MAPPING)
+
+def orderalleles_status_vec(sumstats, nea="NEA", ea="EA", status="STATUS", verbose=True, log=Log()):
+
+    # Translate the strings to integer numpy arrays in a very fast way
+    _ea = sumstats[ea]
+    max_len_ea = _ea.str.len().max()
+    _ea = _ea.str.translate(TRANSLATE_TABLE_ORDER).to_numpy().astype(f'<U{max_len_ea}')
+    _ea = _ea.view('<u4').reshape(-1, max_len_ea).astype(np.uint8)
+
+    _nea = sumstats[nea]
+    max_len_nea = _nea.str.len().max()
+    _nea = _nea.str.translate(TRANSLATE_TABLE_ORDER).to_numpy().astype(f'<U{max_len_nea}')
+    _nea = _nea.view('<u4').reshape(-1, max_len_nea).astype(np.uint8)
+
+    ea_non_zero = np.sum(_ea != 0, axis=1)
+    nea_non_zero = np.sum(_nea != 0, axis=1)
+
+    # First condition: swap if NEA is longer than EA
+    should_swap = nea_non_zero > ea_non_zero 
+
+    # Now, when NEA and EA have the same length, check if the first different value is smaller in NEA than in EA (which means that NEA comes first in alphabetical order)
+    equal_length = nea_non_zero == ea_non_zero
+    ea_equal = _ea[equal_length]
+    nea_equal = _nea[equal_length]
+    max_shape = max(ea_equal.shape[1], nea_equal.shape[1])
+    if ea_equal.shape[1] > nea_equal.shape[1]:
+        nea_equal = np.pad(nea_equal, ((0,0), (0,max_shape-_nea.shape[1])))
+    elif ea_equal.shape[1] < nea_equal.shape[1]:
+        ea_equal = np.pad(ea_equal, ((0,0), (0,max_shape-_ea.shape[1])))
+
+    first_difference = np.argmax(nea_equal != ea_equal, axis=1)
+    ea_different_val = np.take_along_axis(ea_equal, first_difference[:,None], axis=1) # get the first different value in EA
+    nea_different_val = np.take_along_axis(nea_equal, first_difference[:,None], axis=1) # get the first different value in NEA
+    cond_ordering = (nea_different_val < ea_different_val).flatten() # Second condition: swap if the first different value in NEA is smaller than in EA
+    should_swap[equal_length] = cond_ordering
+    
+    log.write(f"  -For Flipped match ({sum(should_swap)} matches): convert STATUS xxxxx[0123456789]x to xxxxx3x...", verbose=verbose)
+    sumstats.loc[should_swap, status] = vchange_status(sumstats.loc[should_swap, status], 6, "0123456789", "3"*10)
+
+    return sumstats
+
+
+def vectorizedorderalleles_status(sumstats, nea="NEA", ea="EA", status="STATUS", verbose=True, log=Log()):
+    ##start function with col checking##########################################################
+    _start_line = "change status based on custom allele order"
+    _end_line = "changing status based on custom allele order"
+    _start_cols = [nea,ea,status]
+    _start_function = ".order_alleles()"
+    _must_args = {}
+
+    is_enough_info = start_to(sumstats=sumstats,
+                            log=log,
+                            verbose=verbose,
+                            start_line=_start_line,
+                            end_line=_end_line,
+                            start_cols=_start_cols,
+                            start_function=_start_function,
+                            **_must_args)
+    if is_enough_info == False: return sumstats
+    ############################################################################################
+
+    max_len = 4 # this is a chosen value, we could compute it using some stats about the length and count of NEA and EA strings
+    condition = (sumstats[nea].str.len() <= max_len) * (sumstats[ea].str.len() <= max_len)
+
+    log.write(f" -Changing status for records with ( len(NEA) <= {max_len} and len(EA) <= {max_len} )", verbose=verbose)
+    sumstats_cond = sumstats[condition]
+    sumstats[condition] = orderalleles_status_vec(sumstats_cond, nea=nea, ea=ea, status=status, verbose=verbose, log=log)
+
+    log.write(f" -Changing staturs for records with ( len(NEA) > {max_len} or len(EA) > {max_len} )", verbose=verbose)
+    sumstats_not_cond = sumstats[~condition]
+    sumstats[~condition] = orderalleles_status_vec(sumstats_not_cond, nea=nea, ea=ea, status=status, verbose=verbose, log=log)
+
+    finished(log,verbose,_end_line)
+
+    return sumstats
+
+
+###############################################################################################################
+# 20240409
+def build_snpids(sumstats, chrom="CHR", pos="POS", nea="NEA", ea="EA", snpid="SNPID"):
+        return sumstats[chrom].astype('string') + ":" + sumstats[pos].astype('string') + ":" + sumstats[ea].astype('string') + ":" + sumstats[nea].astype('string') # do not use .astype(str), it's much slower
+
+def parallelbuildsnpid(sumstats, chrom="CHR", pos="POS", nea="NEA", ea="EA", snpid="SNPID", n_cores=1, verbose=True, log=Log()):
+    if snpid in sumstats.columns:
+        log.write(f"Start to build SNPID column on {n_cores} cores...", verbose=verbose)
+
+        if n_cores > 1:
+            df_split = _df_split(sumstats[[chrom, pos, ea, nea]], n_cores)
+            pool = Pool(n_cores)
+            map_func = partial(build_snpids, chrom=chrom, pos=pos, nea=nea, ea=ea, snpid=snpid)
+            snpids = pd.concat(pool.map(map_func, df_split))
+            pool.close()
+            pool.join()
+        else:
+            snpids = build_snpids(sumstats, chrom=chrom, pos=pos, nea=nea, ea=ea, snpid=snpid)
+        sumstats[snpid] = snpids
+        log.write("Finished building SNPID column.", verbose=verbose)
+    else:
+        log.warning(f"'{snpid}' column is not found in the DataFrame. Skipping the build of SNPID.", verbose=verbose)
+    return sumstats
+
+
 
 
 ###############################################################################################################
