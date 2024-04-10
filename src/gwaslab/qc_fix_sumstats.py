@@ -1600,6 +1600,9 @@ TRANSLATE_TABLE_ORDER = _maketrans(ORDER_MAPPING)
 
 def orderalleles_status_vec(sumstats, nea="NEA", ea="EA", status="STATUS", verbose=True, log=Log()):
 
+    if sumstats.empty:
+        return sumstats
+
     # Translate the strings to integer numpy arrays in a very fast way
     _ea = sumstats[ea]
     max_len_ea = _ea.str.len().max()
@@ -1663,11 +1666,13 @@ def vectorizedorderalleles_status(sumstats, nea="NEA", ea="EA", status="STATUS",
 
     log.write(f" -Changing status for records with ( len(NEA) <= {max_len} and len(EA) <= {max_len} )", verbose=verbose)
     sumstats_cond = sumstats[condition]
-    sumstats[condition] = orderalleles_status_vec(sumstats_cond, nea=nea, ea=ea, status=status, verbose=verbose, log=log)
+    out = orderalleles_status_vec(sumstats_cond, nea=nea, ea=ea, status=status, verbose=verbose, log=log)
+    sumstats.loc[condition, status] = out[status]
 
-    log.write(f" -Changing staturs for records with ( len(NEA) > {max_len} or len(EA) > {max_len} )", verbose=verbose)
+    log.write(f" -Changing status for records with ( len(NEA) > {max_len} or len(EA) > {max_len} )", verbose=verbose)
     sumstats_not_cond = sumstats[~condition]
-    sumstats[~condition] = orderalleles_status_vec(sumstats_not_cond, nea=nea, ea=ea, status=status, verbose=verbose, log=log)
+    out = orderalleles_status_vec(sumstats_not_cond, nea=nea, ea=ea, status=status, verbose=verbose, log=log)
+    sumstats.loc[~condition, status] = out[status]
 
     finished(log,verbose,_end_line)
 
