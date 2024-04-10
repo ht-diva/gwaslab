@@ -20,6 +20,7 @@ from gwaslab.qc_fix_sumstats import sortcoordinate
 from gwaslab.qc_fix_sumstats import sortcolumn
 from gwaslab.qc_fix_sumstats import _set_build
 from gwaslab.qc_fix_sumstats import _process_build
+from gwaslab.qc_fix_sumstats import parallelorderalleles
 from gwaslab.hm_harmonize_sumstats import parallelecheckaf
 from gwaslab.hm_harmonize_sumstats import paralleleinferaf
 from gwaslab.hm_harmonize_sumstats import checkref
@@ -286,7 +287,16 @@ class Sumstats():
         self.data = sortcolumn(self.data,verbose=verbose,log=self.log)
         self.meta["is_sorted"] = True
         ###############################################
-        
+
+    
+    def order_alleles(self, ea='EA', nea='NEA', n_cores=1, flipallelestats_args={}, **kwargs):
+        self.data = parallelorderalleles(self.data, log=self.log, ea=ea, nea=nea, n_cores=n_cores, **kwargs)
+
+        categories = set(self.data['EA']) | set(self.data['NEA'])
+        self.data[ea] = pd.Categorical(self.data[ea],categories = categories) 
+        self.data[nea] = pd.Categorical(self.data[nea],categories = categories)
+
+        self.data = flipallelestats(self.data, log=self.log, **flipallelestats_args)
     
     def harmonize(self,
               basic_check=True,
