@@ -5,7 +5,7 @@ import numpy as np
 from itertools import repeat
 from multiprocessing import  Pool
 from liftover import get_lifter
-from functools import partial
+from functools import partial, cmp_to_key
 from gwaslab.g_vchange_status import vchange_status
 from gwaslab.g_vchange_status import status_match
 from gwaslab.g_vchange_status import change_status
@@ -1518,6 +1518,80 @@ def sortcolumn(sumstats,verbose=True,log=Log(),order = None):
 
     finished(log,verbose,_end_line)
     return sumstats
+
+###############################################################################################################
+# 20240409
+def custom_alleles_sort(strings):
+    def compare(a, b):
+        # If both strings have the same length =1
+        if len(a) == len(b) == 1:
+            return ord(a) - ord(b)
+        # If both strings have length > 1
+        elif len(a) == len(b) > 1:
+            for char_a, char_b in zip(a, b):
+                if char_a != char_b:
+                    return ord(char_a) - ord(char_b)
+            return len(a) - len(b)
+        # If one string is longer than the other
+        else:
+            return len(b) - len(a)
+    
+    return sorted(strings, key=cmp_to_key(compare))
+
+def parallelorderalleles(sumstats, snpid='SNPID', chrom="CHR", pos="POS", nea="NEA", ea="EA", status="STATUS", n_cores=1, verbose=True, log=Log()):
+    ##start function with col checking##########################################################
+    _start_line = "order alleles"
+    _end_line = "ordering alleles"
+    _start_cols = [snpid,chrom,pos,nea,ea,status] if snpid in sumstats.columns else [nea,ea,status]
+    _start_function = ".order_alleles()"
+    _must_args = {}
+
+    is_enough_info = start_to(sumstats=sumstats,
+                            log=log,
+                            verbose=verbose,
+                            start_line=_start_line,
+                            end_line=_end_line,
+                            start_cols=_start_cols,
+                            start_function=_start_function,
+                            n_cores=n_cores,
+                            **_must_args)
+    if is_enough_info == False: return sumstats
+    ############################################################################################
+
+    if n_cores > 1:
+        df_split = _df_split(sumstats, n_cores)
+        pool = Pool(n_cores)
+        map_func = partial(orderalleles, snpid=snpid,chrom=chrom,pos=pos,ea=ea,nea=nea,status=status,verbose=verbose,log=log)
+        sumstats = pd.concat(pool.map(map_func, df_split))
+        pool.close()
+        pool.join()
+    else:
+        sumstats = orderalleles(sumstats, snpid=snpid,chrom=chrom,pos=pos,ea=ea,nea=nea,status=status,verbose=verbose,log=log)
+
+    finished(log,verbose,_end_line)
+    return sumstats
+
+def orderalleles(sumstats, snpid='SNPID', chrom="CHR", pos="POS", nea="NEA", ea="EA", status="STATUS", verbose=True, log=Log()):
+    def status_ordering(chrom, pos, ea, nea, status, build_snpid=True):
+        to_sort = [ea, nea]
+        allele1, allele2 = custom_alleles_sort(to_sort)
+        if allele1 != ea:
+            status = status[:5] + '3' + status[6:]
+        
+        if build_snpid:
+            return f"{chrom}:{pos}:{allele1}:{allele2}", status
+        else:
+            return status
+        
+    build_snpid = snpid in sumstats.columns
+    out = sumstats[[chrom, pos, ea, nea, status]].apply(lambda x: status_ordering(x.iloc[0], x.iloc[1], x.iloc[2], x.iloc[3], x.iloc[4], build_snpid=build_snpid), axis=1, result_type='expand')
+    
+    if build_snpid:
+        sumstats[[snpid, status]] = out
+    else:
+        sumstats[[status]] = out
+
+    return sumstats   
 
 
 ###############################################################################################################
